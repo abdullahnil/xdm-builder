@@ -253,4 +253,10 @@ jobs:
             echo "[Code signing policy](https://github.com/subhra74/xdm/blob/master/CODE_SIGNING_POLICY.md)"
           } > downloads.md
           cat downloads.md
-          flags=(--title "XDM ${tag#v}" --generate-notes --target "$GITHUB_SHA
+          flags=(--title "XDM ${tag#v}" --notes-file downloads.md --target "$GITHUB_SHA")
+          
+          if [ "$pre" = true ]; then
+            flags+=(--prerelease)
+          fi
+          
+          gh release create "$tag" "${files[@]}" "${flags[@]}"
