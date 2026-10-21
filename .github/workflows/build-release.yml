@@ -1,0 +1,77 @@
+name: XDM Tüm Platformlar İçin Otomatik Derleme
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0' # Her pazar gece yarısı
+
+jobs:
+  build:
+    name: Derleme - ${{ matrix.os }}
+    # Matris ile Ubuntu (Linux), Windows ve macOS üzerinde 3 ayrı sanal makine ayağa kalkar
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # Bir platformda hata olursa diğerleri derlenmeye devam etsin
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: XDM Kaynak Kodunu İndir
+        uses: actions/checkout@v4
+        with:
+          repository: subhra74/xdm
+          ref: master
+
+      - name: JDK Kurulumu
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17' # Projenin ihtiyacına göre güncelleyin
+
+      # İsteğe bağlı: Linux için ek paketleme araçları gerekebilir (rpm, dpkg vb.)
+      - name: Linux Paketleme Araçlarını Kur (Sadece Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y rpm fakeroot
+        
+      # XDM son sürümlerinde genellikle Gradle ve jpackage kullanılıyor. 
+      # Buradaki komut orijinal deponun nasıl derlendiğine göre değiştirilmelidir.
+      - name: Projeyi Derle ve Paketle (Windows)
+        if: matrix.os == 'windows-latest'
+        run: ./gradlew.bat jpackage # veya projenin Windows derleme komutu
+
+      - name: Projeyi Derle ve Paketle (Linux / macOS)
+        if: matrix.os != 'windows-latest'
+        run: ./gradlew jpackage # veya projenin Unix derleme komutu
+
+      # Üretilen dosyaları geçici olarak GitHub Actions hafızasına alıyoruz
+      - name: Derlenen Dosyaları (Artifacts) Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdm-builds-${{ matrix.os }}
+          path: |
+            build/jpackage/*
+            target/*.exe
+            target/*.dmg
+            target/*.deb
+            target/*.rpm
+            # Buraya derleme sonucunda oluşan dosyaların dizinini yazın
+
+  # Tüm derlemeler bittikten sonra tek bir Release altında birleştiren job
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tüm Derlenmiş Dosyaları İndir
+        uses: actions/download-artifact@v4
+        with:
+          path: all-builds
+
+      - name: Otomatik Sürüm (Release) Oluştur ve Dosyaları Yükle
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: nightly-${{ github.run_number }}
+          name: XDM Tüm Platformlar Derlemesi #${{ github.run_number }}
+          body: "Windows, macOS ve Linux için otomatik olarak derlenmiş XDM kurulum dosyaları."
+          files: all-builds/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
